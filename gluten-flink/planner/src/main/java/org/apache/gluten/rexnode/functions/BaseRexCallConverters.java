@@ -23,6 +23,9 @@ import org.apache.gluten.rexnode.TypeUtils;
 import io.github.zhztheplayer.velox4j.expression.CallTypedExpr;
 import io.github.zhztheplayer.velox4j.expression.TypedExpr;
 import io.github.zhztheplayer.velox4j.type.BigIntType;
+import io.github.zhztheplayer.velox4j.type.DecimalType;
+
+import io.github.zhztheplayer.velox4j.type.IntervalDayTimeType;
 import io.github.zhztheplayer.velox4j.type.TimestampType;
 import io.github.zhztheplayer.velox4j.type.Type;
 
@@ -80,10 +83,97 @@ class BasicArithmeticOperatorRexCallConverter extends BaseRexCallConverter {
   @Override
   public TypedExpr toTypedExpr(RexCall callNode, RexConversionContext context) {
     List<TypedExpr> params = getParams(callNode, context);
-    // If types are different, align them
+
+    // 处理二元算术运算
+    if (params.size() == 2) {
+      Type leftType = params.get(0).getReturnType();
+      Type rightType = params.get(1).getReturnType();
+
+      // 检查是否包含 DECIMAL 类型
+      boolean hasDecimal = leftType instanceof DecimalType || rightType instanceof DecimalType;
+
+      if (hasDecimal) {
+        // 使用改进的类型提升逻辑
+        List<TypedExpr> alignedParams = TypeUtils.promoteTypeForArithmeticExpressions(params);
+
+        // 获取对齐后的类型
+        Type alignedLeftType = alignedParams.get(0).getReturnType();
+        Type alignedRightType = alignedParams.get(1).getReturnType();
+
+        // 如果是 DECIMAL 运算，计算正确的结果类型
+        if (alignedLeftType instanceof DecimalType && alignedRightType instanceof DecimalType) {
+          Type resultType =
+              calculateDecimalResultType(
+                  (DecimalType) alignedLeftType, (DecimalType) alignedRightType, functionName);
+          return new CallTypedExpr(resultType, alignedParams, functionName);
+        }
+      }
+    }
+
+    // 其他情况使用原有逻辑
     List<TypedExpr> alignedParams = TypeUtils.promoteTypeForArithmeticExpressions(params);
     Type resultType = getResultType(callNode);
     return new CallTypedExpr(resultType, alignedParams, functionName);
+  }
+
+  /** 根据 Velox 规则计算 DECIMAL 运算的结果类型 */
+  private Type calculateDecimalResultType(
+      DecimalType leftType, DecimalType rightType, String operation) {
+    int leftPrecision = leftType.getPrecision();
+    int leftScale = leftType.getScale();
+    int rightPrecision = rightType.getPrecision();
+    int rightScale = rightType.getScale();
+
+    int resultPrecision;
+    int resultScale;
+
+    switch (operation.toLowerCase()) {
+      case "plus":
+      case "add":
+      case "minus":
+      case "subtract":
+        // 加减法：precision = max(p1-s1, p2-s2) + max(s1, s2) + 1
+        //        scale = max(s1, s2)
+        resultScale = Math.max(leftScale, rightScale);
+        resultPrecision =
+            Math.max(leftPrecision - leftScale, rightPrecision - rightScale) + resultScale + 1;
+        break;
+
+      case "multiply":
+        // 乘法：precision = p1 + p2 + 1, scale = s1 + s2
+        resultPrecision = leftPrecision + rightPrecision + 1;
+        resultScale = leftScale + rightScale;
+        break;
+
+      case "divide":
+        // 除法：precision = p1 - s1 + s2 + max(6, s1 + p2 + 1)
+        //      scale = max(6, s1 + p2 + 1)
+        resultScale = Math.max(6, leftScale + rightPrecision + 1);
+        resultPrecision = leftPrecision - leftScale + rightScale + resultScale;
+        break;
+
+      default:
+        // 默认情况，使用较大的精度和标度
+        resultPrecision = Math.max(leftPrecision, rightPrecision);
+        resultScale = Math.max(leftScale, rightScale);
+        break;
+    }
+
+    // 确保精度不超过 38
+    if (resultPrecision > 38) {
+      resultPrecision = 38;
+      // 调整 scale，确保不超过 precision
+      resultScale = Math.min(resultScale, resultPrecision);
+      // 对于除法，尽量保持至少 6 位小数
+      if ("divide".equals(operation.toLowerCase())) {
+        resultScale = Math.max(Math.min(resultScale, 6), resultPrecision - 32);
+      }
+    }
+
+    // 确保 scale 不超过 precision
+    resultScale = Math.min(resultScale, resultPrecision);
+
+    return new DecimalType(resultPrecision, resultScale);
   }
 }
 
