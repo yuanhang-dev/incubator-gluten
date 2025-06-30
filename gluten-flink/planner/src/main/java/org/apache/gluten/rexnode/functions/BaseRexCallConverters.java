@@ -24,8 +24,6 @@ import io.github.zhztheplayer.velox4j.expression.CallTypedExpr;
 import io.github.zhztheplayer.velox4j.expression.TypedExpr;
 import io.github.zhztheplayer.velox4j.type.BigIntType;
 import io.github.zhztheplayer.velox4j.type.DecimalType;
-
-import io.github.zhztheplayer.velox4j.type.IntervalDayTimeType;
 import io.github.zhztheplayer.velox4j.type.TimestampType;
 import io.github.zhztheplayer.velox4j.type.Type;
 
@@ -84,7 +82,7 @@ class BasicArithmeticOperatorRexCallConverter extends BaseRexCallConverter {
   public TypedExpr toTypedExpr(RexCall callNode, RexConversionContext context) {
     List<TypedExpr> params = getParams(callNode, context);
 
-    // 处理二元算术运算
+    Type resultType = getResultType(callNode);
     if (params.size() == 2) {
       Type leftType = params.get(0).getReturnType();
       Type rightType = params.get(1).getReturnType();
@@ -96,23 +94,12 @@ class BasicArithmeticOperatorRexCallConverter extends BaseRexCallConverter {
         // 使用改进的类型提升逻辑
         List<TypedExpr> alignedParams = TypeUtils.promoteTypeForArithmeticExpressions(params);
 
-        // 获取对齐后的类型
-        Type alignedLeftType = alignedParams.get(0).getReturnType();
-        Type alignedRightType = alignedParams.get(1).getReturnType();
-
-        // 如果是 DECIMAL 运算，计算正确的结果类型
-        if (alignedLeftType instanceof DecimalType && alignedRightType instanceof DecimalType) {
-          Type resultType =
-              calculateDecimalResultType(
-                  (DecimalType) alignedLeftType, (DecimalType) alignedRightType, functionName);
-          return new CallTypedExpr(resultType, alignedParams, functionName);
-        }
+        return new CallTypedExpr(resultType, alignedParams, functionName);
       }
     }
 
     // 其他情况使用原有逻辑
     List<TypedExpr> alignedParams = TypeUtils.promoteTypeForArithmeticExpressions(params);
-    Type resultType = getResultType(callNode);
     return new CallTypedExpr(resultType, alignedParams, functionName);
   }
 
