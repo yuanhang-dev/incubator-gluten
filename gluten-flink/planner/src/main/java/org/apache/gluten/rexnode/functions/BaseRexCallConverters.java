@@ -83,6 +83,7 @@ class BasicArithmeticOperatorRexCallConverter extends BaseRexCallConverter {
     List<TypedExpr> params = getParams(callNode, context);
 
     Type resultType = getResultType(callNode);
+    // 处理二元算术运算
     if (params.size() == 2) {
       Type leftType = params.get(0).getReturnType();
       Type rightType = params.get(1).getReturnType();
@@ -91,10 +92,23 @@ class BasicArithmeticOperatorRexCallConverter extends BaseRexCallConverter {
       boolean hasDecimal = leftType instanceof DecimalType || rightType instanceof DecimalType;
 
       if (hasDecimal) {
-        // 使用改进的类型提升逻辑
+        //         使用改进的类型提升逻辑
         List<TypedExpr> alignedParams = TypeUtils.promoteTypeForArithmeticExpressions(params);
 
-        return new CallTypedExpr(resultType, alignedParams, functionName);
+        // 获取对齐后的类型
+        Type alignedLeftType = alignedParams.get(0).getReturnType();
+        Type alignedRightType = alignedParams.get(1).getReturnType();
+
+        //         如果是 DECIMAL 运算，计算正确的结果类型
+        if (alignedLeftType instanceof DecimalType && alignedRightType instanceof DecimalType) {
+                    Type veloxResultType =
+                        calculateDecimalResultType(
+                            (DecimalType) alignedLeftType, (DecimalType) alignedRightType,
+           functionName);
+          return new CallTypedExpr(veloxResultType, alignedParams, functionName);
+        }
+        //        Type flinkResultType = getResultType(callNode);
+        //        return new CallTypedExpr(flinkResultType, params, functionName);
       }
     }
 

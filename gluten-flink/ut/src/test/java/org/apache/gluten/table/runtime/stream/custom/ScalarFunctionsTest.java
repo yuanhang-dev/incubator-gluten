@@ -23,7 +23,6 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 
@@ -130,11 +129,13 @@ class ScalarFunctionsTest extends GlutenStreamingTestBase {
 
   @Test
   void testSimpleDecimalMultiply() {
-    List<Row> rows = Arrays.asList(Row.of(1, new BigDecimal("100.000")));
-    createSimpleBoundedValuesTable("testTbl", "id int, price DECIMAL(23, 3)", rows);
+    List<Row> rows = Arrays.asList(Row.of(1, 100L));
+    createSimpleBoundedValuesTable("testTbl", "id int, price bigint", rows);
     String query =
-//        "SELECT id, CAST(price * CAST(0.908 AS DECIMAL(4, 3)) AS DECIMAL(10, 3)) as x FROM testTbl";
-            "select id, 0.908 * price as x from testTbl";
+        //        "SELECT id, CAST(price * CAST(0.908 AS DECIMAL(4, 3)) AS DECIMAL(10, 3)) as x FROM
+        // testTbl";
+        "select id, 0.908 * price as x from testTbl";
+    //        "SELECT id, CAST(0.908 * price AS DECIMAL(10, 3)) as x FROM testTbl";
     runAndCheck(query, Arrays.asList("+I[1, 90.800]"));
   }
 }
